@@ -1,20 +1,35 @@
-import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
+import { ClerkProvider, useAuth } from '@clerk/clerk-expo';
 import { useFonts } from 'expo-font';
-import { Stack } from 'expo-router';
+import { Slot, useRouter, useSegments } from 'expo-router';
+import * as SecureStore from 'expo-secure-store';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
 import 'react-native-reanimated';
-
-import { useColorScheme } from '@/hooks/useColorScheme';
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
-  const colorScheme = useColorScheme();
   const [loaded] = useFonts({
-    SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
+    SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf')
   });
+
+  const tokenCache = {
+    async getToken(key: string) {
+      try {
+        return await SecureStore.getItemAsync(key);
+      } catch (err) {
+        return null;
+      }
+    },
+    async saveToken(key: string, value: string) {
+      try {
+        return await SecureStore.setItemAsync(key, value);
+      } catch (err) {
+        return;
+      }
+    }
+  };
 
   useEffect(() => {
     if (loaded) {
@@ -27,11 +42,26 @@ export default function RootLayout() {
   }
 
   return (
-    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-      <Stack>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="+not-found" />
-      </Stack>
-    </ThemeProvider>
+    <ClerkProvider publishableKey={process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY!} tokenCache={tokenCache}>
+      <InitialLayout />
+    </ClerkProvider>
   );
 }
+
+const InitialLayout = () => {
+  const { isLoaded, isSignedIn } = useAuth();
+  const segments = useSegments();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (!isLoaded) return;
+    const inTabsGroup = segments[0] === '(auth)';
+    if (isSignedIn && !inTabsGroup) {
+      router.replace('/(tabs)');
+    } else if (!isSignedIn) {
+      router.replace('/login');
+    }
+  }, [isSignedIn]);
+
+  return <Slot />;
+};
